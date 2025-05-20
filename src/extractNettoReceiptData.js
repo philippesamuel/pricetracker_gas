@@ -10,42 +10,61 @@
  * @returns {number|null} return.lineItems[].totalPrice - The total price of the item.
  * @returns {string|null} return.lineItems[].details - Additional details or sub-description of the item.
  */
-export function extractNettoReceiptData(emailBody) {
+function extractNettoReceiptData(emailBody) {
 
+  const { storeAddressRaw, lineItemsRaw } = extractStoreAndPurchaseString(emailBody, 'Filiale:', '<!-- ZAHLUNGEN -->', '<!-- SUMME -->');
+
+  // Extract store address
+  Logger.log('parsing store address ...');
+  const storeAddress = extractStoreAddress(storeAddressRaw);
+
+  // Extract line items
+  Logger.log('parsing line items ...');
+  let lineItems = extractLineItems(lineItemsRaw);
+  return {
+    storeAddress: storeAddress,
+    lineItems: lineItems,
+  };
+}
+
+/**
+* Extracts a substring from the email body between two specified strings.
+* 
+* @param {string} emailBody - The HTML content of the email.
+* @param {string} startString - The string to start the extraction from.
+* @param {string} middleString - The string to split the extraction.
+* @param {string} endString - The string to end the extraction at.
+* @returns {object} An object containing the extracted store address and line items.
+* @returns {string} return.storeAddressRaw - The raw store address string.
+* @returns {string} return.lineItemsRaw - The raw line items string.
+* 
+*/
+function extractStoreAndPurchaseString(emailBody, startString = 'Filiale:', middleString = '<!-- WARENKORB -->', endString = '<!-- SUMME -->') {
+  const storeAndPurchaseString = emailBody.split(startString)[1].split(endString)[0];
+  const storeAndPurchaseStringArray = storeAndPurchaseString.split(middleString);
+  return { storeAddressRaw: storeAndPurchaseStringArray[0], lineItemsRaw: storeAndPurchaseStringArray[1] };
+}
+
+function extractStoreAddress(storeAddressRaw) {
+  const addressRawArray = storeAddressRaw.split('\n').slice(1, 3);
+  const addressArrayClean = addressRawArray.map(s => s.replace('<br>', '').trim());
+  return addressArrayClean.join(', ');
+}
+
+function extractLineItems(lineItemsRaw) {
   const itemRegex = /<td style="font-size:.+>(.+?)<\/td>/;
   const priceRegex = /<td style="text-align:right;.+>(\d+,\d\d)&nbsp;<\/td>/;
   const itemDetailsRegex = /<td style="font-size:.+>&nbsp;&nbsp;&nbsp;&nbsp;(.*?)<\/td>/;
   const rowDividerRegex = /<hr .*\/><\/td>/;
 
-  let storeAndPurchaseString = emailBody.split('Filiale:')[1].split('<!-- ZAHLUNGEN -->')[0];
-  let storeAndPurchaseStringArray = storeAndPurchaseString.split('<!-- WARENKORB -->');
-  const storeAddressRaw = storeAndPurchaseStringArray[0];
-  Logger.log(storeAndPurchaseStringArray[1]);
-  const lineItemsRaw = storeAndPurchaseStringArray[1].split('<!-- SUMME -->')[0];
-  const addressRawArray = storeAddressRaw.split('\n').slice(1, 3);
-  const lineItemsRawArray = lineItemsRaw.split('\n');
-
-  let storeAddress = null;
   const lineItems = [];
+  lineItemsFilteredArray = extractLineItemsArray(lineItemsRaw);
 
   let currentLineItem = { description: null, totalPrice: null, details: null };
   let searchItem = false;
   let searchPrice = false;
   let searchDetail = false;
 
-
-  // Extract store address
-  Logger.log('parsing store address ...');
-  const addressArrayClean = addressRawArray.map(s => s.replace('<br>', '').trim());
-  storeAddress = addressArrayClean.join(', ');
-  // Logger.log({storeAddress: storeAddress});
-  let lineItemsFilteredArray = lineItemsRawArray.filter(function (line) {
-    let stringsToRemove = ['', '<tr>', '</tr>', '<td>&nbsp;</td>', '<td></td>'];
-    return !stringsToRemove.includes(line.trim());
-  });
-
-  // Extract line items
-  Logger.log('parsing line items ...');
   for (const line of lineItemsFilteredArray) {
     // Logger.log(line);
     const dividerMatch = line.match(rowDividerRegex);
@@ -98,8 +117,14 @@ export function extractNettoReceiptData(emailBody) {
     lineItems.push({ ...currentLineItem });
   }
 
-  return {
-    storeAddress: storeAddress,
-    lineItems: lineItems,
-  };
+  return lineItems;
+}
+
+function extractLineItemsArray(lineItemsRaw) {
+  const lineItemsRawArray = lineItemsRaw.split('\n');
+  let lineItemsFilteredArray = lineItemsRawArray.filter(function (line) {
+    let stringsToRemove = ['', '<tr>', '</tr>', '<td>&nbsp;</td>', '<td></td>'];
+    return !stringsToRemove.includes(line.trim());
+  });
+  return lineItemsFilteredArray;
 }
